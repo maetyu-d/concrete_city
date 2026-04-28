@@ -45,6 +45,9 @@ private:
     void drawBleachedPaintingPass();
     void drawTextureToScreen(Texture2D texture);
     void drawScreenAtmosphere();
+    void resizeRenderTargets(int width, int height);
+    void unloadRenderTargets();
+    void drawResolutionMenu();
     void loadRainSoundtrack();
     void unloadRainSoundtrack();
     void updateRainSoundtrack();
@@ -100,6 +103,7 @@ private:
     bool m_rainCrossfading = false;
     float m_rainCrossfadeStart = 0.0f;
     float m_rainCrossfadeDuration = 30.0f;
+    bool m_resolutionMenuOpen = false;
     bool m_renderingShadowMap = false;
     bool m_useMeshVisuals = false;
     bool m_shadowMapDirty = true;

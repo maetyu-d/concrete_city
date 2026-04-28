@@ -18,14 +18,19 @@
 namespace {
 constexpr float Pi = 3.14159265f;
 constexpr float TurnSpeed = 3.25f;
-constexpr int WindowWidth = 1280;
-constexpr int WindowHeight = 720;
+int WindowWidth = 1600;
+int WindowHeight = 900;
 constexpr int ShadowMapResolution = 2048;
 constexpr float MouseSensitivity = 0.0024f;
 constexpr float PlayerCollisionRadius = 0.22f;
 constexpr float RainSoundtrackVolume = 0.55f;
 constexpr float RainSoundtrackCrossfadeSeconds = 30.0f;
+constexpr int RainSoundtrackBufferFrames = 49152;
 constexpr const char* RainSoundtrackPath = "assets/audio/rain.wav";
+constexpr int CurrentRenderWidth = 1600;
+constexpr int CurrentRenderHeight = 900;
+constexpr int FullHdRenderWidth = 1920;
+constexpr int FullHdRenderHeight = 1080;
 
 int positiveMod(int value, int divisor) {
     const int mod = value % divisor;
@@ -309,6 +314,10 @@ void unloadShadowmapRenderTexture(RenderTexture2D target) {
         rlUnloadFramebuffer(target.id);
     }
 }
+
+bool renderTextureLoaded(RenderTexture2D target) {
+    return target.id > 0;
+}
 }
 
 Game::Game()
@@ -326,19 +335,7 @@ Game::Game()
     SetTargetFPS(60);
     DisableCursor();
     loadRainSoundtrack();
-    m_sceneTarget = LoadRenderTexture(WindowWidth, WindowHeight);
-    SetTextureFilter(m_sceneTarget.texture, TEXTURE_FILTER_BILINEAR);
-    m_feedbackTargets[0] = LoadRenderTexture(WindowWidth, WindowHeight);
-    m_feedbackTargets[1] = LoadRenderTexture(WindowWidth, WindowHeight);
-    SetTextureFilter(m_feedbackTargets[0].texture, TEXTURE_FILTER_BILINEAR);
-    SetTextureFilter(m_feedbackTargets[1].texture, TEXTURE_FILTER_BILINEAR);
-    BeginTextureMode(m_feedbackTargets[0]);
-    ClearBackground({18, 20, 20, 255});
-    EndTextureMode();
-    BeginTextureMode(m_feedbackTargets[1]);
-    ClearBackground({18, 20, 20, 255});
-    EndTextureMode();
-    m_camera.offset = {WindowWidth * 0.5f, WindowHeight * 0.5f};
+    resizeRenderTargets(WindowWidth, WindowHeight);
     m_camera.target = m_player.position();
     m_camera.rotation = 0.0f;
     m_camera.zoom = 1.0f;
@@ -373,9 +370,7 @@ Game::~Game() {
     UnloadTexture(m_anomalyTexture);
     unloadShadowmapRenderTexture(m_shadowMap);
     unloadVisualShaders();
-    UnloadRenderTexture(m_feedbackTargets[0]);
-    UnloadRenderTexture(m_feedbackTargets[1]);
-    UnloadRenderTexture(m_sceneTarget);
+    unloadRenderTargets();
     UnloadModel(m_cubeModel);
     UnloadModel(m_sphereModel);
     UnloadModel(m_cylinderModel);
@@ -456,6 +451,53 @@ void Game::loadVisualShaders() {
     }
 }
 
+void Game::unloadRenderTargets() {
+    if (renderTextureLoaded(m_feedbackTargets[0])) {
+        UnloadRenderTexture(m_feedbackTargets[0]);
+        m_feedbackTargets[0] = {};
+    }
+    if (renderTextureLoaded(m_feedbackTargets[1])) {
+        UnloadRenderTexture(m_feedbackTargets[1]);
+        m_feedbackTargets[1] = {};
+    }
+    if (renderTextureLoaded(m_sceneTarget)) {
+        UnloadRenderTexture(m_sceneTarget);
+        m_sceneTarget = {};
+    }
+}
+
+void Game::resizeRenderTargets(int width, int height) {
+    if (width == WindowWidth && height == WindowHeight && renderTextureLoaded(m_sceneTarget)) {
+        return;
+    }
+
+    unloadRenderTargets();
+    WindowWidth = width;
+    WindowHeight = height;
+
+    m_sceneTarget = LoadRenderTexture(WindowWidth, WindowHeight);
+    SetTextureFilter(m_sceneTarget.texture, TEXTURE_FILTER_BILINEAR);
+    m_feedbackTargets[0] = LoadRenderTexture(WindowWidth, WindowHeight);
+    m_feedbackTargets[1] = LoadRenderTexture(WindowWidth, WindowHeight);
+    SetTextureFilter(m_feedbackTargets[0].texture, TEXTURE_FILTER_BILINEAR);
+    SetTextureFilter(m_feedbackTargets[1].texture, TEXTURE_FILTER_BILINEAR);
+
+    BeginTextureMode(m_feedbackTargets[0]);
+    ClearBackground({18, 20, 20, 255});
+    EndTextureMode();
+    BeginTextureMode(m_feedbackTargets[1]);
+    ClearBackground({18, 20, 20, 255});
+    EndTextureMode();
+
+    m_camera.offset = {WindowWidth * 0.5f, WindowHeight * 0.5f};
+    m_feedbackWriteIndex = 0;
+
+    if (m_paintingShader.id > 0 && m_paintingResolutionLoc >= 0) {
+        const float paintingResolution[2] = {static_cast<float>(WindowWidth), static_cast<float>(WindowHeight)};
+        SetShaderValue(m_paintingShader, m_paintingResolutionLoc, paintingResolution, SHADER_UNIFORM_VEC2);
+    }
+}
+
 void Game::run() {
     while (!WindowShouldClose()) {
         const float dt = GetFrameTime();
@@ -465,6 +507,8 @@ void Game::run() {
 }
 
 void Game::loadRainSoundtrack() {
+    // A larger stream buffer prevents rain underruns when the GPU has a heavy frame.
+    SetAudioStreamBufferSizeDefault(RainSoundtrackBufferFrames);
     InitAudioDevice();
     m_audioReady = IsAudioDeviceReady();
     if (!m_audioReady) {
@@ -591,6 +635,26 @@ void Game::update(float dt) {
     updateRainSoundtrack();
 
     if (IsKeyPressed(KEY_M)) {
+        m_resolutionMenuOpen = !m_resolutionMenuOpen;
+    }
+
+    if (m_resolutionMenuOpen) {
+        if (IsKeyPressed(KEY_ONE) || IsKeyPressed(KEY_KP_1)) {
+            resizeRenderTargets(CurrentRenderWidth, CurrentRenderHeight);
+            m_resolutionMenuOpen = false;
+        }
+        if (IsKeyPressed(KEY_TWO) || IsKeyPressed(KEY_KP_2)) {
+            resizeRenderTargets(FullHdRenderWidth, FullHdRenderHeight);
+            m_resolutionMenuOpen = false;
+        }
+        if (IsKeyPressed(KEY_ESCAPE)) {
+            m_resolutionMenuOpen = false;
+        }
+        updateWindowTitle();
+        return;
+    }
+
+    if (IsKeyPressed(KEY_P)) {
         m_deltas.toggleMarker(playerTile());
     }
     if (IsKeyPressed(KEY_F3)) {
@@ -661,6 +725,9 @@ void Game::render() {
 
     BeginDrawing();
     drawTextureToScreen(m_feedbackTargets[m_feedbackWriteIndex].texture);
+    if (m_resolutionMenuOpen) {
+        drawResolutionMenu();
+    }
     EndDrawing();
 
     m_feedbackWriteIndex = 1 - m_feedbackWriteIndex;
@@ -884,13 +951,19 @@ void Game::draw3DTerrainTile(TileCoord tile, TileType type, Vector2 playerTilePo
     if (!isCityBuilding(tile)) {
         if (!m_renderingShadowMap && isLampPostTile(tile)) {
             const Vector3 lampBase{tile.x + 0.5f, 0.03f, tile.y + 0.5f};
-            drawContactShadow({lampBase.x, 0.012f, lampBase.z}, 0.34f, 105.0f);
-            drawLitCube({lampBase.x, 0.055f, lampBase.z}, {0.34f, 0.11f, 0.34f}, mixColor(paving, {128, 124, 104, 255}, 0.42f), m_concreteTexture);
-            drawLitCylinder({lampBase.x, 0.20f, lampBase.z}, 0.095f, 0.28f, {24, 27, 26, 255}, m_concreteTexture);
-            drawLitCylinder({lampBase.x, 1.82f, lampBase.z}, 0.045f, 3.24f, {20, 23, 22, 255}, m_concreteTexture);
-            drawLitCube({lampBase.x, 3.47f, lampBase.z}, {0.18f, 0.12f, 0.18f}, {95, 75, 48, 255}, m_concreteTexture);
-            drawGlowCube({lampBase.x, 3.38f, lampBase.z}, {0.28f, 0.16f, 0.28f}, {255, 218, 128, 255});
-            DrawPoint3D({lampBase.x, 3.38f, lampBase.z}, {255, 231, 168, 255});
+            drawContactShadow({lampBase.x, 0.012f, lampBase.z}, 0.58f, 150.0f);
+            drawLitCube({lampBase.x, 0.075f, lampBase.z}, {0.56f, 0.15f, 0.56f}, mixColor(paving, {174, 158, 104, 255}, 0.62f), m_concreteTexture);
+            drawLitCylinder({lampBase.x, 0.30f, lampBase.z}, 0.145f, 0.45f, {45, 45, 38, 255}, m_concreteTexture);
+            drawLitCylinder({lampBase.x, 2.15f, lampBase.z}, 0.085f, 3.70f, {44, 46, 40, 255}, m_concreteTexture);
+            drawLitCube({lampBase.x, 2.02f, lampBase.z}, {0.32f, 0.11f, 0.32f}, {96, 84, 58, 255}, m_concreteTexture);
+            drawLitCube({lampBase.x, 3.90f, lampBase.z}, {0.82f, 0.13f, 0.18f}, {92, 74, 45, 255}, m_concreteTexture);
+            drawLitCube({lampBase.x, 3.68f, lampBase.z}, {0.42f, 0.36f, 0.42f}, {118, 84, 48, 255}, m_concreteTexture);
+            drawGlowCube({lampBase.x, 3.60f, lampBase.z}, {0.58f, 0.34f, 0.58f}, {255, 229, 136, 255});
+            drawLitCube({lampBase.x, 3.56f, lampBase.z}, {0.36f, 0.22f, 0.36f}, {255, 208, 104, 245}, m_concreteTexture);
+            drawLitCube({lampBase.x - 0.33f, 3.48f, lampBase.z}, {0.24f, 0.12f, 0.20f}, {255, 211, 118, 235}, m_concreteTexture);
+            drawLitCube({lampBase.x + 0.33f, 3.48f, lampBase.z}, {0.24f, 0.12f, 0.20f}, {255, 211, 118, 235}, m_concreteTexture);
+            DrawCubeWires({lampBase.x, 3.68f, lampBase.z}, 0.48f, 0.42f, 0.48f, {255, 238, 184, 210});
+            DrawPoint3D({lampBase.x, 3.60f, lampBase.z}, {255, 246, 194, 255});
         }
         return;
     }
@@ -1217,6 +1290,32 @@ void Game::drawTextureToScreen(Texture2D texture) {
     );
 }
 
+void Game::drawResolutionMenu() {
+    const int screenWidth = GetScreenWidth();
+    const int screenHeight = GetScreenHeight();
+    const int panelWidth = 560;
+    const int panelHeight = 280;
+    const int panelX = (screenWidth - panelWidth) / 2;
+    const int panelY = (screenHeight - panelHeight) / 2;
+
+    DrawRectangle(0, 0, screenWidth, screenHeight, {0, 0, 0, 120});
+    DrawRectangle(panelX - 8, panelY - 8, panelWidth + 16, panelHeight + 16, {245, 226, 165, 38});
+    DrawRectangle(panelX, panelY, panelWidth, panelHeight, {12, 15, 17, 232});
+    DrawRectangleLinesEx({static_cast<float>(panelX), static_cast<float>(panelY), static_cast<float>(panelWidth), static_cast<float>(panelHeight)}, 2.0f, {230, 214, 166, 180});
+
+    DrawText("Shader Resolution", panelX + 34, panelY + 30, 32, {238, 226, 191, 255});
+    DrawText("M closes this menu. Movement pauses while it is open.", panelX + 36, panelY + 74, 18, {174, 184, 184, 255});
+
+    const bool currentSelected = WindowWidth == CurrentRenderWidth && WindowHeight == CurrentRenderHeight;
+    const bool fullHdSelected = WindowWidth == FullHdRenderWidth && WindowHeight == FullHdRenderHeight;
+    const Color selected = {255, 221, 132, 255};
+    const Color normal = {204, 211, 202, 255};
+
+    DrawText(currentSelected ? "> 1  Current 1600 x 900" : "  1  Current 1600 x 900", panelX + 52, panelY + 130, 24, currentSelected ? selected : normal);
+    DrawText(fullHdSelected ? "> 2  1080p 1920 x 1080" : "  2  1080p 1920 x 1080", panelX + 52, panelY + 172, 24, fullHdSelected ? selected : normal);
+    DrawText("Esc cancels   |   P places a marker", panelX + 52, panelY + 228, 18, {156, 162, 153, 255});
+}
+
 void Game::drawScreenAtmosphere() {
     DrawRectangle(0, 0, WindowWidth, 110, {0, 0, 0, 46});
     DrawRectangle(0, WindowHeight - 135, WindowWidth, 135, {0, 0, 0, 72});
@@ -1230,9 +1329,10 @@ void Game::updateWindowTitle() {
     std::ostringstream title;
     title << "Zone Drifter | pos " << tile.x << "," << tile.y
           << " | chunk " << chunk.x << "," << chunk.y
+          << " | shader " << WindowWidth << "x" << WindowHeight
           << (m_useMeshVisuals ? " | mesh shader" : " | psychedelic shader")
           << " | loaded " << m_chunks.loadedChunkCount()
-          << " | mouse look | WASD move | I shader | M marker | F3 debug";
+          << " | mouse look | WASD move | M resolution | P marker | I shader | F3 debug";
     SetWindowTitle(title.str().c_str());
 }
 
