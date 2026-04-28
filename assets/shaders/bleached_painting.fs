@@ -7,6 +7,7 @@ uniform sampler2D texture0;
 uniform sampler2D feedbackTexture;
 uniform vec2 resolution;
 uniform float time;
+uniform vec2 lookInfluence;
 
 out vec4 finalColor;
 
@@ -155,19 +156,24 @@ void main()
     float halftoneStrength = 0.045 + smoothstep(0.10, 0.70, inkNeed) * 0.070;
     painted = mix(painted, halftoneLayer, halftoneStrength);
 
-    vec2 rainUv = uv * vec2(resolution.x / resolution.y, 1.0);
-    vec2 slantA = vec2(rainUv.x + rainUv.y * 0.42, rainUv.y);
-    vec2 slantB = vec2(rainUv.x + rainUv.y * 0.72, rainUv.y);
-    float rainSeedA = hash21(floor(vec2(slantA.x * 155.0, slantA.y * 9.0 - time * 35.0)));
-    float rainSeedB = hash21(floor(vec2(slantB.x * 92.0 + 19.0, slantB.y * 6.0 - time * 23.0)));
+    vec2 rainUv = (uv - 0.5) * vec2(resolution.x / resolution.y, 1.0);
+    float lookSlant = 0.52 + lookInfluence.x * 0.58;
+    float pitchRush = 1.0 + abs(lookInfluence.y) * 0.62;
+    rainUv.x += lookInfluence.x * 0.18;
+    rainUv.y += lookInfluence.y * 0.26;
+    vec2 slantA = vec2(rainUv.x + rainUv.y * lookSlant, rainUv.y);
+    vec2 slantB = vec2(rainUv.x + rainUv.y * (lookSlant + 0.31), rainUv.y);
+    float rainSeedA = hash21(floor(vec2(slantA.x * 155.0, slantA.y * 9.0 - time * 35.0 * pitchRush)));
+    float rainSeedB = hash21(floor(vec2(slantB.x * 92.0 + 19.0, slantB.y * 6.0 - time * 23.0 * pitchRush)));
     float rainColumnA = 1.0 - smoothstep(0.018, 0.055, abs(fract(slantA.x * 155.0 + rainSeedA * 0.22) - 0.5));
     float rainColumnB = 1.0 - smoothstep(0.012, 0.046, abs(fract(slantB.x * 92.0 + rainSeedB * 0.27) - 0.5));
-    float rainDashA = smoothstep(0.05, 0.22, fract(slantA.y * 34.0 - time * 19.0 + rainSeedA));
-    float rainDashB = smoothstep(0.08, 0.28, fract(slantB.y * 24.0 - time * 13.0 + rainSeedB));
+    float rainDashA = smoothstep(0.05, 0.22, fract(slantA.y * 34.0 - time * 19.0 * pitchRush + rainSeedA));
+    float rainDashB = smoothstep(0.08, 0.28, fract(slantB.y * 24.0 - time * 13.0 * pitchRush + rainSeedB));
     float rain = clamp(rainColumnA * rainDashA * smoothstep(0.20, 1.0, rainSeedA) + rainColumnB * rainDashB * smoothstep(0.12, 1.0, rainSeedB), 0.0, 1.0);
 
-    float rainCurtain = valueNoise(vec2(uv.x * 18.0 + time * 0.18, uv.y * 5.0 - time * 1.6));
-    float oilFlow = valueNoise(vec2(uv.x * 5.2 + sin(time * 0.17) * 0.6, uv.y * 10.0 - time * 0.42));
+    vec2 weatherFlow = uv + lookInfluence * vec2(0.13, 0.20);
+    float rainCurtain = valueNoise(vec2(weatherFlow.x * 18.0 + time * (0.18 + lookInfluence.x * 0.10), weatherFlow.y * 5.0 - time * 1.6 * pitchRush));
+    float oilFlow = valueNoise(vec2(weatherFlow.x * 5.2 + sin(time * 0.17 + lookInfluence.x * 1.7) * 0.6, weatherFlow.y * 10.0 - time * 0.42 * pitchRush));
     float oilVeil = smoothstep(0.48, 0.95, oilFlow) * (0.18 + rainCurtain * 0.32);
     vec3 oilBlack = vec3(0.015, 0.018, 0.017);
     vec3 oilRainbowRaw = vec3(

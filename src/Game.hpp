@@ -89,6 +89,7 @@ private:
     int m_paintingFeedbackLoc = -1;
     int m_paintingResolutionLoc = -1;
     int m_paintingTimeLoc = -1;
+    int m_paintingLookLoc = -1;
     int m_feedbackWriteIndex = 0;
     int m_activeMaterialTextureId = -1;
     Music m_rainMusicPrimary{};

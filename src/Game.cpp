@@ -318,6 +318,11 @@ Game::Game()
     , m_player({0.0f, 0.0f}) {
     SetConfigFlags(FLAG_MSAA_4X_HINT);
     InitWindow(WindowWidth, WindowHeight, "Zone Drifter");
+    const int monitor = GetCurrentMonitor();
+    SetWindowSize(GetMonitorWidth(monitor), GetMonitorHeight(monitor));
+    if (!IsWindowFullscreen()) {
+        ToggleFullscreen();
+    }
     SetTargetFPS(60);
     DisableCursor();
     loadRainSoundtrack();
@@ -409,9 +414,9 @@ void Game::loadVisualShaders() {
     m_useShadowMapLoc = GetShaderLocation(m_lightingShader, "useShadowMap");
 
     const float lightDir[3] = {-0.18f, -0.94f, -0.28f};
-    const float lightColor[4] = {1.28f, 1.04f, 0.70f, 1.0f};
-    const float ambientColor[4] = {0.026f, 0.036f, 0.052f, 1.0f};
-    const float fogColor[4] = {0.008f, 0.012f, 0.018f, 1.0f};
+    const float lightColor[4] = {1.42f, 1.13f, 0.74f, 1.0f};
+    const float ambientColor[4] = {0.019f, 0.027f, 0.040f, 1.0f};
+    const float fogColor[4] = {0.005f, 0.008f, 0.013f, 1.0f};
     const float fogStart = 12.0f;
     const float fogEnd = 58.0f;
     const float materialDepth = 1.15f;
@@ -433,6 +438,7 @@ void Game::loadVisualShaders() {
     m_paintingFeedbackLoc = GetShaderLocation(m_paintingShader, "feedbackTexture");
     m_paintingResolutionLoc = GetShaderLocation(m_paintingShader, "resolution");
     m_paintingTimeLoc = GetShaderLocation(m_paintingShader, "time");
+    m_paintingLookLoc = GetShaderLocation(m_paintingShader, "lookInfluence");
     const float paintingResolution[2] = {static_cast<float>(WindowWidth), static_cast<float>(WindowHeight)};
     SetShaderValue(m_paintingShader, m_paintingResolutionLoc, paintingResolution, SHADER_UNIFORM_VEC2);
 
@@ -883,8 +889,8 @@ void Game::draw3DTerrainTile(TileCoord tile, TileType type, Vector2 playerTilePo
             drawLitCylinder({lampBase.x, 0.20f, lampBase.z}, 0.095f, 0.28f, {24, 27, 26, 255}, m_concreteTexture);
             drawLitCylinder({lampBase.x, 1.82f, lampBase.z}, 0.045f, 3.24f, {20, 23, 22, 255}, m_concreteTexture);
             drawLitCube({lampBase.x, 3.47f, lampBase.z}, {0.18f, 0.12f, 0.18f}, {95, 75, 48, 255}, m_concreteTexture);
-            drawGlowCube({lampBase.x, 3.38f, lampBase.z}, {0.25f, 0.14f, 0.25f}, {255, 209, 116, 245});
-            DrawPoint3D({lampBase.x, 3.38f, lampBase.z}, {255, 220, 144, 255});
+            drawGlowCube({lampBase.x, 3.38f, lampBase.z}, {0.28f, 0.16f, 0.28f}, {255, 218, 128, 255});
+            DrawPoint3D({lampBase.x, 3.38f, lampBase.z}, {255, 231, 168, 255});
         }
         return;
     }
@@ -907,9 +913,9 @@ void Game::draw3DTerrainTile(TileCoord tile, TileType type, Vector2 playerTilePo
 
     if (!m_renderingShadowMap && distance < 29.0f && hashToUnit(stableHash(0x10987ULL, tile.x, tile.y, 0x10BB)) > 0.58) {
         const Color innerLight = hashToUnit(stableHash(0x10987ULL, tile.x, tile.y, 0xAA1)) > 0.55
-            ? Color{255, 195, 83, 220}
-            : Color{95, 210, 255, 190};
-        drawGlowCube({tile.x + 0.5f, 2.36f, tile.y + 0.5f}, {0.72f, 0.12f, 0.72f}, innerLight);
+            ? Color{255, 205, 94, 245}
+            : Color{116, 222, 255, 220};
+        drawGlowCube({tile.x + 0.5f, 2.36f, tile.y + 0.5f}, {0.82f, 0.14f, 0.82f}, innerLight);
     }
 
     if (height > 9.0f && distance < 43.5f) {
@@ -1067,7 +1073,8 @@ void Game::drawReflectivePuddle(TileCoord tile, Color paving, float distance) {
 
 void Game::drawGlowCube(Vector3 position, Vector3 scale, Color color) {
     DrawCube(position, scale.x, scale.y, scale.z, color);
-    DrawCube(position, scale.x * 1.8f, scale.y * 1.65f, scale.z * 1.8f, {color.r, color.g, color.b, static_cast<unsigned char>(color.a * 0.22f)});
+    DrawCube(position, scale.x * 2.25f, scale.y * 1.95f, scale.z * 2.25f, {color.r, color.g, color.b, static_cast<unsigned char>(color.a * 0.30f)});
+    DrawCube(position, scale.x * 3.25f, scale.y * 2.55f, scale.z * 3.25f, {color.r, color.g, color.b, static_cast<unsigned char>(color.a * 0.10f)});
 }
 
 void Game::drawLitCube(Vector3 position, Vector3 scale, Color tint, Texture2D texture) {
@@ -1176,6 +1183,11 @@ void Game::drawBleachedPaintingPass() {
     ClearBackground(m_useMeshVisuals ? BLACK : Color{210, 206, 188, 255});
     const float time = GetTime();
     SetShaderValue(m_paintingShader, m_paintingTimeLoc, &time, SHADER_UNIFORM_FLOAT);
+    const float lookInfluence[2] = {
+        std::sin(m_firstPersonAngle) * 0.72f,
+        std::clamp(m_firstPersonPitch, -0.85f, 0.85f)
+    };
+    SetShaderValue(m_paintingShader, m_paintingLookLoc, lookInfluence, SHADER_UNIFORM_VEC2);
 
     BeginShaderMode(m_paintingShader);
     int feedbackSlot = 1;
@@ -1198,7 +1210,7 @@ void Game::drawTextureToScreen(Texture2D texture) {
     DrawTexturePro(
         texture,
         {0.0f, 0.0f, static_cast<float>(texture.width), -static_cast<float>(texture.height)},
-        {0.0f, 0.0f, static_cast<float>(WindowWidth), static_cast<float>(WindowHeight)},
+        {0.0f, 0.0f, static_cast<float>(GetScreenWidth()), static_cast<float>(GetScreenHeight())},
         {0.0f, 0.0f},
         0.0f,
         WHITE

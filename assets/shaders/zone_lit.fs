@@ -124,12 +124,12 @@ void main()
     float rim = pow(1.0 - max(dot(viewDir, normal), 0.0), 2.8) * 0.12;
 
     float sideFalloff = pow(1.0 - abs(normal.y), 0.72);
-    vec3 lit = base.rgb * ambientColor.rgb * (0.19 + skyBounce * 0.21);
-    lit += base.rgb * lightColor.rgb * pow(diffuse, 1.72) * 1.18 * selfShadow;
+    vec3 lit = base.rgb * ambientColor.rgb * (0.15 + skyBounce * 0.18);
+    lit += base.rgb * lightColor.rgb * pow(diffuse, 1.72) * 1.24 * selfShadow;
     lit += lightColor.rgb * rim * sideFalloff;
     lit += mix(vec3(0.0), vec3(0.68, 0.84, 0.92) * (0.18 + rim * 0.85 + rippleLine * 0.42), waterMaterial);
     lit += oilPrism * oilFilm * waterMaterial * (0.045 + rim * 0.10 + rippleLine * 0.075);
-    lit = mix(lit * 0.62, lit, smoothstep(0.08, 0.74, diffuse + rim));
+    lit = mix(lit * 0.55, lit, smoothstep(0.08, 0.74, diffuse + rim));
 
     if (useShadowMap == 1)
     {
@@ -155,7 +155,7 @@ void main()
             }
 
             shadow /= 9.0;
-            lit *= 1.0 - shadow * (0.18 + diffuse * 0.70);
+            lit *= 1.0 - shadow * (0.21 + diffuse * 0.72);
         }
     }
 
