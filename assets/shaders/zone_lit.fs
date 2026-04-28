@@ -113,23 +113,23 @@ void main()
     float relief = (abs(height - heightX) + abs(height - heightY)) * materialDepth;
     float crevice = smoothstep(0.035, 0.22, relief);
     float lowPore = smoothstep(0.54, 0.16, height) * materialDepth;
-    base.rgb *= 1.0 - crevice * 0.38 - lowPore * 0.12;
+    base.rgb *= 1.0 - crevice * 0.46 - lowPore * 0.16;
 
     vec3 light = normalize(-lightDir);
     vec3 viewDir = normalize(viewPos - fragPosition);
 
     float diffuse = max(dot(normal, light), 0.0);
-    float selfShadow = clamp(1.0 - crevice * 0.42 - lowPore * 0.16, 0.55, 1.0);
+    float selfShadow = clamp(1.0 - crevice * 0.52 - lowPore * 0.22, 0.46, 1.0);
     float skyBounce = clamp(normal.y * 0.5 + 0.5, 0.0, 1.0);
     float rim = pow(1.0 - max(dot(viewDir, normal), 0.0), 2.8) * 0.12;
 
     float sideFalloff = pow(1.0 - abs(normal.y), 0.72);
-    vec3 lit = base.rgb * ambientColor.rgb * (0.24 + skyBounce * 0.24);
-    lit += base.rgb * lightColor.rgb * pow(diffuse, 1.65) * 1.18 * selfShadow;
+    vec3 lit = base.rgb * ambientColor.rgb * (0.19 + skyBounce * 0.21);
+    lit += base.rgb * lightColor.rgb * pow(diffuse, 1.72) * 1.18 * selfShadow;
     lit += lightColor.rgb * rim * sideFalloff;
     lit += mix(vec3(0.0), vec3(0.68, 0.84, 0.92) * (0.18 + rim * 0.85 + rippleLine * 0.42), waterMaterial);
     lit += oilPrism * oilFilm * waterMaterial * (0.045 + rim * 0.10 + rippleLine * 0.075);
-    lit = mix(lit * 0.72, lit, smoothstep(0.08, 0.74, diffuse + rim));
+    lit = mix(lit * 0.62, lit, smoothstep(0.08, 0.74, diffuse + rim));
 
     if (useShadowMap == 1)
     {
@@ -155,7 +155,7 @@ void main()
             }
 
             shadow /= 9.0;
-            lit *= 1.0 - shadow * diffuse * 0.68;
+            lit *= 1.0 - shadow * (0.18 + diffuse * 0.70);
         }
     }
 

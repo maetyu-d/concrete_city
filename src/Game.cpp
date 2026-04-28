@@ -9,6 +9,7 @@
 #include <limits>
 #include <sstream>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include <raymath.h>
@@ -22,6 +23,9 @@ constexpr int WindowHeight = 720;
 constexpr int ShadowMapResolution = 2048;
 constexpr float MouseSensitivity = 0.0024f;
 constexpr float PlayerCollisionRadius = 0.22f;
+constexpr float RainSoundtrackVolume = 0.55f;
+constexpr float RainSoundtrackCrossfadeSeconds = 30.0f;
+constexpr const char* RainSoundtrackPath = "assets/audio/rain.wav";
 
 int positiveMod(int value, int divisor) {
     const int mod = value % divisor;
@@ -316,6 +320,7 @@ Game::Game()
     InitWindow(WindowWidth, WindowHeight, "Zone Drifter");
     SetTargetFPS(60);
     DisableCursor();
+    loadRainSoundtrack();
     m_sceneTarget = LoadRenderTexture(WindowWidth, WindowHeight);
     SetTextureFilter(m_sceneTarget.texture, TEXTURE_FILTER_BILINEAR);
     m_feedbackTargets[0] = LoadRenderTexture(WindowWidth, WindowHeight);
@@ -354,6 +359,7 @@ Game::Game()
 }
 
 Game::~Game() {
+    unloadRainSoundtrack();
     UnloadTexture(m_concreteTexture);
     UnloadTexture(m_groundTexture);
     UnloadTexture(m_waterTexture);
@@ -430,6 +436,9 @@ void Game::loadVisualShaders() {
     const float paintingResolution[2] = {static_cast<float>(WindowWidth), static_cast<float>(WindowHeight)};
     SetShaderValue(m_paintingShader, m_paintingResolutionLoc, paintingResolution, SHADER_UNIFORM_VEC2);
 
+    m_activeMaterialTextureId = -1;
+    m_shadowMapDirty = true;
+
     if (m_cubeModel.meshCount > 0) {
         m_cubeModel.materials[0].shader = m_lightingShader;
     }
@@ -449,7 +458,132 @@ void Game::run() {
     }
 }
 
+void Game::loadRainSoundtrack() {
+    InitAudioDevice();
+    m_audioReady = IsAudioDeviceReady();
+    if (!m_audioReady) {
+        std::cout << "Audio device unavailable; rain soundtrack disabled.\n";
+        return;
+    }
+
+    // The soundtrack is streamed twice so the end can overlap the beginning.
+    // That gives us a 30 second crossfade without storing the whole track in memory.
+    m_rainMusicPrimary = LoadMusicStream(RainSoundtrackPath);
+    m_rainMusicSecondary = LoadMusicStream(RainSoundtrackPath);
+    m_rainPrimaryLoaded = m_rainMusicPrimary.stream.buffer != nullptr;
+    m_rainSecondaryLoaded = m_rainMusicSecondary.stream.buffer != nullptr;
+
+    if (!m_rainPrimaryLoaded) {
+        std::cout << "Could not load rain soundtrack: " << RainSoundtrackPath << "\n";
+        return;
+    }
+
+    m_rainMusicPrimary.looping = false;
+    m_rainMusicSecondary.looping = false;
+    SetMusicVolume(m_rainMusicPrimary, RainSoundtrackVolume);
+    SetMusicVolume(m_rainMusicSecondary, 0.0f);
+    PlayMusicStream(m_rainMusicPrimary);
+}
+
+void Game::unloadRainSoundtrack() {
+    if (!m_audioReady) {
+        return;
+    }
+
+    if (m_rainPrimaryLoaded) {
+        UnloadMusicStream(m_rainMusicPrimary);
+        m_rainPrimaryLoaded = false;
+    }
+    if (m_rainSecondaryLoaded) {
+        UnloadMusicStream(m_rainMusicSecondary);
+        m_rainSecondaryLoaded = false;
+    }
+
+    CloseAudioDevice();
+    m_audioReady = false;
+}
+
+void Game::updateRainSoundtrack() {
+    if (!m_audioReady || !m_rainPrimaryLoaded) {
+        return;
+    }
+
+    UpdateMusicStream(m_rainMusicPrimary);
+
+    const float length = GetMusicTimeLength(m_rainMusicPrimary);
+    const float played = GetMusicTimePlayed(m_rainMusicPrimary);
+    if (length <= 0.0f) {
+        return;
+    }
+
+    const float crossfadeDuration = std::min(RainSoundtrackCrossfadeSeconds, std::max(1.0f, length * 0.5f));
+    if (!m_rainCrossfading && length - played <= crossfadeDuration) {
+        startRainCrossfade(crossfadeDuration);
+    }
+
+    if (!m_rainCrossfading) {
+        if (!IsMusicStreamPlaying(m_rainMusicPrimary)) {
+            SeekMusicStream(m_rainMusicPrimary, 0.0f);
+            PlayMusicStream(m_rainMusicPrimary);
+            SetMusicVolume(m_rainMusicPrimary, RainSoundtrackVolume);
+        }
+        return;
+    }
+
+    if (!m_rainSecondaryLoaded) {
+        if (!IsMusicStreamPlaying(m_rainMusicPrimary)) {
+            SeekMusicStream(m_rainMusicPrimary, 0.0f);
+            PlayMusicStream(m_rainMusicPrimary);
+            SetMusicVolume(m_rainMusicPrimary, RainSoundtrackVolume);
+            m_rainCrossfading = false;
+        }
+        return;
+    }
+
+    UpdateMusicStream(m_rainMusicSecondary);
+
+    const float elapsed = static_cast<float>(GetTime()) - m_rainCrossfadeStart;
+    const float fade = std::clamp(elapsed / m_rainCrossfadeDuration, 0.0f, 1.0f);
+    SetMusicVolume(m_rainMusicPrimary, RainSoundtrackVolume * (1.0f - fade));
+    SetMusicVolume(m_rainMusicSecondary, RainSoundtrackVolume * fade);
+
+    if (fade >= 1.0f || !IsMusicStreamPlaying(m_rainMusicPrimary)) {
+        finishRainCrossfade();
+    }
+}
+
+void Game::startRainCrossfade(float duration) {
+    if (!m_rainSecondaryLoaded) {
+        return;
+    }
+
+    m_rainCrossfadeDuration = std::max(1.0f, duration);
+    m_rainCrossfadeStart = static_cast<float>(GetTime());
+    StopMusicStream(m_rainMusicSecondary);
+    SeekMusicStream(m_rainMusicSecondary, 0.0f);
+    SetMusicVolume(m_rainMusicSecondary, 0.0f);
+    PlayMusicStream(m_rainMusicSecondary);
+    m_rainCrossfading = true;
+}
+
+void Game::finishRainCrossfade() {
+    if (!m_rainSecondaryLoaded) {
+        m_rainCrossfading = false;
+        return;
+    }
+
+    StopMusicStream(m_rainMusicPrimary);
+    std::swap(m_rainMusicPrimary, m_rainMusicSecondary);
+    SetMusicVolume(m_rainMusicPrimary, RainSoundtrackVolume);
+    StopMusicStream(m_rainMusicSecondary);
+    SeekMusicStream(m_rainMusicSecondary, 0.0f);
+    SetMusicVolume(m_rainMusicSecondary, 0.0f);
+    m_rainCrossfading = false;
+}
+
 void Game::update(float dt) {
+    updateRainSoundtrack();
+
     if (IsKeyPressed(KEY_M)) {
         m_deltas.toggleMarker(playerTile());
     }
@@ -504,7 +638,12 @@ void Game::render() {
         playerWorld.y / static_cast<float>(TileSize)
     };
     constexpr int shadowDrawRadius = 23;
-    updateShadowMap(playerTilePosition, shadowDrawRadius);
+    const TileCoord currentTile = playerTile();
+    if (m_shadowMapDirty || !(currentTile == m_shadowTile)) {
+        updateShadowMap(playerTilePosition, shadowDrawRadius);
+        m_shadowTile = currentTile;
+        m_shadowMapDirty = false;
+    }
 
     BeginTextureMode(m_sceneTarget);
     renderFirstPerson();
@@ -604,7 +743,7 @@ void Game::renderFirstPerson() {
     camera.projection = CAMERA_PERSPECTIVE;
     updateLightingShader(camera);
 
-    constexpr int drawRadius = 44;
+    constexpr int drawRadius = 53;
 
     rlEnableShader(m_lightingShader.id);
     int shadowSlot = 10;
@@ -613,7 +752,7 @@ void Game::renderFirstPerson() {
     rlSetUniform(m_shadowMapLoc, &shadowSlot, SHADER_UNIFORM_INT, 1);
 
     BeginMode3D(camera);
-    renderFirstPersonScene(playerTilePosition, drawRadius);
+    renderFirstPersonScene(playerTilePosition, drawRadius, forward, true);
     EndMode3D();
 
     DrawRectangleGradientV(0, 0, WindowWidth, 210, {1, 4, 8, 205}, {8, 13, 17, 0});
@@ -621,16 +760,35 @@ void Game::renderFirstPerson() {
     DrawRectangle(0, 0, WindowWidth, WindowHeight, {18, 25, 34, 42});
 }
 
-void Game::renderFirstPersonScene(Vector2 playerTilePosition, int drawRadius) {
+void Game::renderFirstPersonScene(Vector2 playerTilePosition, int drawRadius, Vector2 viewForward, bool cullToView) {
     const int centerX = static_cast<int>(std::floor(playerTilePosition.x));
     const int centerY = static_cast<int>(std::floor(playerTilePosition.y));
+    constexpr float ViewCullBehindTolerance = -0.30f;
 
     for (int y = centerY - drawRadius; y <= centerY + drawRadius; ++y) {
         for (int x = centerX - drawRadius; x <= centerX + drawRadius; ++x) {
             const TileCoord tile{x, y};
             const float dx = static_cast<float>(x) + 0.5f - playerTilePosition.x;
             const float dy = static_cast<float>(y) + 0.5f - playerTilePosition.y;
-            if (dx * dx + dy * dy > static_cast<float>(drawRadius * drawRadius)) {
+            const float distanceSquared = dx * dx + dy * dy;
+            if (distanceSquared > static_cast<float>(drawRadius * drawRadius)) {
+                continue;
+            }
+            if (cullToView && distanceSquared > 9.0f) {
+                const float inverseDistance = 1.0f / std::sqrt(distanceSquared);
+                const float forwardDot = (dx * viewForward.x + dy * viewForward.y) * inverseDistance;
+                if (forwardDot < ViewCullBehindTolerance) {
+                    continue;
+                }
+            }
+            if (cullToView && isCityBuilding(tile) && distanceSquared > 41.0f * 41.0f) {
+                const float inverseDistance = 1.0f / std::sqrt(distanceSquared);
+                const float forwardDot = (dx * viewForward.x + dy * viewForward.y) * inverseDistance;
+                if (forwardDot < 0.08f) {
+                    continue;
+                }
+            }
+            if (cullToView && !isCityBuilding(tile) && distanceSquared > 43.5f * 43.5f) {
                 continue;
             }
             draw3DTerrainTile(tile, m_chunks.tileAt(tile), playerTilePosition);
@@ -709,11 +867,11 @@ void Game::draw3DTerrainTile(TileCoord tile, TileType type, Vector2 playerTilePo
     const float slabHeight = street ? 0.10f : 0.16f;
     drawLitCube({tile.x + 0.5f, -0.06f + slabHeight * 0.5f, tile.y + 0.5f}, {1.0f, slabHeight, 1.0f}, paving, street ? m_groundTexture : m_concreteTexture);
 
-    if (!m_renderingShadowMap && !isCityBuilding(tile) && distance < 34.0f) {
+    if (!m_renderingShadowMap && !isCityBuilding(tile) && distance < 41.0f) {
         drawReflectivePuddle(tile, paving, distance);
     }
 
-    if (!m_renderingShadowMap && street && distance < 24.0f && positiveMod(tile.x + tile.y * 3, 11) == 0) {
+    if (!m_renderingShadowMap && street && distance < 29.0f && positiveMod(tile.x + tile.y * 3, 11) == 0) {
         drawLitCube({tile.x + 0.5f, 0.018f, tile.y + 0.5f}, {0.78f, 0.025f, 0.16f}, mixColor(paving, {176, 170, 142, 255}, 0.42f), m_concreteTexture);
     }
 
@@ -738,7 +896,7 @@ void Game::draw3DTerrainTile(TileCoord tile, TileType type, Vector2 playerTilePo
     const float towerHeight = std::max(height - lobbyHeight, 1.0f);
     drawLitCube({tile.x + 0.5f, lobbyHeight + towerHeight * 0.5f, tile.y + 0.5f}, {1.0f - inset, towerHeight, 1.0f - inset}, concrete, m_concreteTexture);
 
-    if (!m_renderingShadowMap && distance < 27.0f) {
+    if (!m_renderingShadowMap && distance < 33.0f) {
         const Color columnColor = mixColor(concrete, {18, 22, 22, 255}, 0.24f);
         const float columnHeight = lobbyHeight * 0.94f;
         drawLitCube({tile.x + 0.16f, columnHeight * 0.5f, tile.y + 0.16f}, {0.15f, columnHeight, 0.15f}, columnColor, m_concreteTexture);
@@ -747,19 +905,19 @@ void Game::draw3DTerrainTile(TileCoord tile, TileType type, Vector2 playerTilePo
         drawLitCube({tile.x + 0.84f, columnHeight * 0.5f, tile.y + 0.84f}, {0.15f, columnHeight, 0.15f}, columnColor, m_concreteTexture);
     }
 
-    if (!m_renderingShadowMap && distance < 24.0f && hashToUnit(stableHash(0x10987ULL, tile.x, tile.y, 0x10BB)) > 0.58) {
+    if (!m_renderingShadowMap && distance < 29.0f && hashToUnit(stableHash(0x10987ULL, tile.x, tile.y, 0x10BB)) > 0.58) {
         const Color innerLight = hashToUnit(stableHash(0x10987ULL, tile.x, tile.y, 0xAA1)) > 0.55
             ? Color{255, 195, 83, 220}
             : Color{95, 210, 255, 190};
         drawGlowCube({tile.x + 0.5f, 2.36f, tile.y + 0.5f}, {0.72f, 0.12f, 0.72f}, innerLight);
     }
 
-    if (height > 9.0f && distance < 36.0f) {
+    if (height > 9.0f && distance < 43.5f) {
         const float capHeight = 0.22f + static_cast<float>(hashToUnit(stableHash(0xB4F0ULL, tile.x, tile.y, 0xCA9))) * 0.22f;
         drawLitCube({tile.x + 0.5f, height + capHeight * 0.5f, tile.y + 0.5f}, {1.06f, capHeight, 1.06f}, mixColor(concrete, {215, 210, 178, 255}, 0.24f), m_concreteTexture);
     }
 
-    if (!m_renderingShadowMap && distance < 21.0f) {
+    if (!m_renderingShadowMap && distance < 25.5f) {
         drawCityFacadeDetails(tile, height, concrete, playerTilePosition);
     }
 }
@@ -837,7 +995,7 @@ void Game::draw3DObject(const WorldObject& object, Vector2 playerTilePosition) {
     const float dx = x - playerTilePosition.x;
     const float dz = z - playerTilePosition.y;
     const float distance = std::sqrt(dx * dx + dz * dz);
-    if (distance > 38.0f) {
+    if (distance > 46.0f) {
         return;
     }
 
@@ -896,7 +1054,7 @@ void Game::drawReflectivePuddle(TileCoord tile, Color paving, float distance) {
         m_waterTexture
     );
 
-    if (distance < 18.0f && localShape > 0.66) {
+    if (distance < 22.0f && localShape > 0.66) {
         const Color brightRim{205, 236, 255, 185};
         drawLitCube(
             {tile.x + 0.5f + offsetX * 0.5f, 0.078f, tile.y + 0.5f + offsetZ * 0.5f},
@@ -962,6 +1120,11 @@ Texture2D Game::textureForObject(ObjectType type) const {
 }
 
 void Game::setMaterialUniforms(Texture2D texture) {
+    if (m_activeMaterialTextureId == static_cast<int>(texture.id)) {
+        return;
+    }
+    m_activeMaterialTextureId = static_cast<int>(texture.id);
+
     float depth = 0.80f;
     float scale = 4.0f;
 
