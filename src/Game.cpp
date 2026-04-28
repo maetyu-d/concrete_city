@@ -164,7 +164,7 @@ bool isCityBuilding(TileCoord tile) {
 }
 
 bool isLampPostTile(TileCoord tile) {
-    return isCityStreet(tile) && positiveMod(tile.x * 5 - tile.y * 3, 37) == 0;
+    return isCityStreet(tile) && positiveMod(tile.x * 5 - tile.y * 3, 74) == 0;
 }
 
 bool circleIntersectsAabb(Vector2 center, float radius, float minX, float minY, float maxX, float maxY) {
@@ -952,17 +952,20 @@ void Game::draw3DTerrainTile(TileCoord tile, TileType type, Vector2 playerTilePo
         if (!m_renderingShadowMap && isLampPostTile(tile)) {
             const Vector3 lampBase{tile.x + 0.5f, 0.03f, tile.y + 0.5f};
             drawContactShadow({lampBase.x, 0.012f, lampBase.z}, 0.58f, 150.0f);
-            drawLitCube({lampBase.x, 0.075f, lampBase.z}, {0.56f, 0.15f, 0.56f}, mixColor(paving, {174, 158, 104, 255}, 0.62f), m_concreteTexture);
-            drawLitCylinder({lampBase.x, 0.30f, lampBase.z}, 0.145f, 0.45f, {45, 45, 38, 255}, m_concreteTexture);
-            drawLitCylinder({lampBase.x, 2.15f, lampBase.z}, 0.085f, 3.70f, {44, 46, 40, 255}, m_concreteTexture);
-            drawLitCube({lampBase.x, 2.02f, lampBase.z}, {0.32f, 0.11f, 0.32f}, {96, 84, 58, 255}, m_concreteTexture);
-            drawLitCube({lampBase.x, 3.90f, lampBase.z}, {0.82f, 0.13f, 0.18f}, {92, 74, 45, 255}, m_concreteTexture);
-            drawLitCube({lampBase.x, 3.68f, lampBase.z}, {0.42f, 0.36f, 0.42f}, {118, 84, 48, 255}, m_concreteTexture);
-            drawGlowCube({lampBase.x, 3.60f, lampBase.z}, {0.58f, 0.34f, 0.58f}, {255, 229, 136, 255});
-            drawLitCube({lampBase.x, 3.56f, lampBase.z}, {0.36f, 0.22f, 0.36f}, {255, 208, 104, 245}, m_concreteTexture);
-            drawLitCube({lampBase.x - 0.33f, 3.48f, lampBase.z}, {0.24f, 0.12f, 0.20f}, {255, 211, 118, 235}, m_concreteTexture);
-            drawLitCube({lampBase.x + 0.33f, 3.48f, lampBase.z}, {0.24f, 0.12f, 0.20f}, {255, 211, 118, 235}, m_concreteTexture);
-            DrawCubeWires({lampBase.x, 3.68f, lampBase.z}, 0.48f, 0.42f, 0.48f, {255, 238, 184, 210});
+            drawLitCube({lampBase.x, 0.075f, lampBase.z}, {0.56f, 0.15f, 0.56f}, {126, 48, 31, 255}, m_concreteTexture);
+            drawLitCylinder({lampBase.x, 0.30f, lampBase.z}, 0.145f, 0.45f, {102, 35, 24, 255}, m_concreteTexture);
+            drawLitCylinder({lampBase.x, 2.15f, lampBase.z}, 0.085f, 3.70f, {154, 55, 32, 255}, m_concreteTexture);
+            drawLitCube({lampBase.x + 0.035f, 2.15f, lampBase.z - 0.035f}, {0.035f, 3.42f, 0.018f}, {214, 86, 42, 255}, m_concreteTexture);
+            drawLitCube({lampBase.x, 2.02f, lampBase.z}, {0.32f, 0.11f, 0.32f}, {151, 58, 34, 255}, m_concreteTexture);
+            drawLitCube({lampBase.x, 3.90f, lampBase.z}, {0.82f, 0.13f, 0.18f}, {95, 31, 22, 255}, m_concreteTexture);
+            drawLitCube({lampBase.x, 3.68f, lampBase.z}, {0.42f, 0.36f, 0.42f}, {129, 43, 26, 255}, m_concreteTexture);
+            drawGlowCube({lampBase.x, 3.60f, lampBase.z}, {0.58f, 0.34f, 0.58f}, {255, 238, 154, 255});
+            drawLitCube({lampBase.x, 3.56f, lampBase.z}, {0.36f, 0.22f, 0.36f}, {255, 226, 126, 255}, m_concreteTexture);
+            drawLitCube({lampBase.x - 0.33f, 3.48f, lampBase.z}, {0.24f, 0.12f, 0.20f}, {255, 231, 145, 255}, m_concreteTexture);
+            drawLitCube({lampBase.x + 0.33f, 3.48f, lampBase.z}, {0.24f, 0.12f, 0.20f}, {255, 231, 145, 255}, m_concreteTexture);
+            DrawCubeWires({lampBase.x, 3.68f, lampBase.z}, 0.48f, 0.42f, 0.48f, {255, 249, 202, 255});
+            DrawLine3D({lampBase.x, 0.42f, lampBase.z}, {lampBase.x, 3.76f, lampBase.z}, {220, 74, 38, 255});
+            DrawLine3D({lampBase.x + 0.06f, 0.42f, lampBase.z + 0.01f}, {lampBase.x + 0.06f, 3.76f, lampBase.z + 0.01f}, {96, 24, 18, 255});
             DrawPoint3D({lampBase.x, 3.60f, lampBase.z}, {255, 246, 194, 255});
         }
         return;
