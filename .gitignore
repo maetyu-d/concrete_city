@@ -1,0 +1,10 @@
+build/
+markers.txt
+.DS_Store
+*.o
+*.a
+*.dylib
+*.so
+*.dll
+*.exe
+*.app/
