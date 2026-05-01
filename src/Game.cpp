@@ -334,6 +334,7 @@ Game::Game()
     }
     SetTargetFPS(60);
     DisableCursor();
+    HideCursor();
     loadRainSoundtrack();
     resizeRenderTargets(WindowWidth, WindowHeight);
     m_camera.target = m_player.position();
@@ -633,6 +634,9 @@ void Game::finishRainCrossfade() {
 
 void Game::update(float dt) {
     updateRainSoundtrack();
+    if (!IsCursorHidden()) {
+        HideCursor();
+    }
 
     if (IsKeyPressed(KEY_M)) {
         m_resolutionMenuOpen = !m_resolutionMenuOpen;
